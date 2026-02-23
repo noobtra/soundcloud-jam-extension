@@ -1,226 +1,93 @@
-# SoundCloud Listen Along - Chrome Extension
+# SoundCloud Jam
 
-A Chrome extension that monitors SoundCloud playback and communicates with a desktop application via WebSocket. Originally designed to enable Discord listen-along functionality (though Discord's closed-source RPC limitations prevent full implementation).
-
-## ⚠️ Project Status
-
-This project has been **discontinued** due to Discord's activity sync and listen-along features being strictly closed source, making it impossible to interact with Discord's RPC to emulate the desired functionality.
+A Chrome extension that brings Spotify Jam-like listening sessions to SoundCloud. Create a jam, share the invite link, and listen together in sync — when the host plays a track, everyone hears it.
 
 ## Features
 
-- **Real-time Track Monitoring**: Automatically detects when tracks start playing on SoundCloud
-- **Track Information Extraction**: Captures artist, title, artwork URL, track URL, and precise timing data
-- **Remote Playback Control**: Allows external applications to trigger track playback via URLs
-- **WebSocket Communication**: Establishes connection with desktop applications on `localhost:9005`
-- **Deep Integration**: Hooks into SoundCloud's internal webpack modules for reliable functionality
-
-## Related Components
-
-This extension works in conjunction with a desktop application:
-
-**🖥️ Desktop Application**: [SoundCloud Listen Along - Desktop App](https://github.com/noobtra/Soundcloud-ListenAlong-Client)
-
-The desktop app handles Discord Rich Presence integration and provides the WebSocket server that this extension connects to. **Both components are required** for the system to function.
-
-## Architecture
-
-The extension consists of several components working together:
-
-```
-┌─────────────────┐    ┌──────────────────┐    ┌─────────────────┐
-│   background.js │◄──►│  scl_bridge.js   │◄──►│ contentScript.js│
-│ (Service Worker)│    │ (Content Script) │    │ (Injected Code) │
-└─────────────────┘    └──────────────────┘    └─────────────────┘
-         │                                               │
-         ▼                                               ▼
-┌─────────────────┐                              ┌─────────────────┐
-│ WebSocket Client│                              │ SoundCloud DOM  │
-│  (Port 9005)    │                              │ & Internal APIs │
-└─────────────────┘                              └─────────────────┘
-```
-
-## File Structure
-
-### Core Files
-
-- **`background.js`** - Service worker managing WebSocket connections and message routing
-- **`websocket-client.js`** - WebSocket client class for desktop app communication
-- **`scl_bridge.js`** - Content script bridging extension and main world contexts
-- **`contentScript.js`** - Main injection script that hooks into SoundCloud's internals
-
-### Configuration Files
-
-- **`manifest.json`** - Extension manifest (not provided, but required)
+- **Create & join jams** via invite codes or shareable links
+- **Force sync playback** — host plays a track, all members auto-play it
+- **Live user list** with avatars, usernames, and now-playing info
+- **Auto-join links** — share `https://soundcloud.com?jam=CODE` and the extension handles the rest
+- **SoundCloud profile detection** — automatically picks up your logged-in identity
+- **Single-tab pinning** — only the tab you started the jam in is active, no conflicts with other SC tabs
+- **Auto-leave** — closing or navigating away from the jam tab cleanly exits the session
 
 ## How It Works
 
-### 1. SoundCloud Integration
+The extension hooks into SoundCloud's internal webpack modules to detect and control playback. A background service worker manages the WebSocket connection to the [jam server](https://github.com/noobtra/soundcloud-jam-server), routing track changes and play commands between session members.
 
-The extension injects `contentScript.js` into SoundCloud pages, which:
-
-- **Webpack Hooking**: Intercepts webpack module loading to find SoundCloud's internal functions
-- **Function Overriding**: Hooks `playCurrent` to detect track changes
-- **Model Extraction**: Captures track model constructors for remote playback
-- **Data Extraction**: Pulls track metadata including precise timing information
-
-### 2. Track Monitoring
-
-When a track starts playing, the extension captures:
-
-```javascript
-{
-  artist: "Artist Name",
-  title: "Track Title", 
-  start_time: 1640995200000,  // Unix timestamp when track started
-  end_time: 1640995380000,    // Unix timestamp when track will end
-  artwork_url: "https://...",
-  track_url: "https://soundcloud.com/..."
-}
+```
+SoundCloud Page (MAIN world)
+        ↕ window.postMessage
+Content Script Bridge (ISOLATED world)
+        ↕ chrome.runtime messaging
+Background Service Worker ← WebSocket → Jam Server
+        ↕ chrome.runtime messaging
+Popup UI (React)
 ```
 
-### 3. Communication Flow
+## Tech Stack
 
-1. **Track Detection**: `contentScript.js` detects playback changes
-2. **Message Bridging**: `scl_bridge.js` forwards messages between contexts
-3. **WebSocket Relay**: `background.js` sends data to desktop app via WebSocket
-4. **Remote Control**: Desktop app can send track URLs back to trigger playback
+- **WXT** — extension framework
+- **React 19** + **TypeScript**
+- **Tailwind CSS v4**
+- **Chrome Manifest V3**
 
-## Installation
+## Project Structure
 
-1. **Clone/Download** this repository
-2. **Create manifest.json** with appropriate permissions:
-   ```json
-   {
-     "manifest_version": 3,
-     "name": "SoundCloud Listen Along",
-     "version": "1.0",
-     "background": {
-       "service_worker": "background.js"
-     },
-     "content_scripts": [{
-       "matches": ["*://*.soundcloud.com/*"],
-       "js": ["scl_bridge.js"],
-       "run_at": "document_start"
-     }],
-     "web_accessible_resources": [{
-       "resources": ["contentScript.js"],
-       "matches": ["*://*.soundcloud.com/*"]
-     }],
-     "permissions": ["activeTab", "tabs"]
-   }
-   ```
-3. **Load Extension** in Chrome Developer Mode
-4. **Start Desktop App** (listening on port 9005)
-5. **Open SoundCloud** and play tracks
-
-## API Reference
-
-### WebSocket Messages
-
-#### Outgoing (Extension → Desktop)
-```javascript
-{
-  type: "WS_SEND_TRACK",
-  data: {
-    artist: string,
-    title: string,
-    start_time: number,    // Unix timestamp (ms)
-    end_time: number,      // Unix timestamp (ms) 
-    artwork_url: string,
-    track_url: string
-  }
-}
+```
+src/
+├── entrypoints/
+│   ├── background.ts              # Service worker — WS, state, tab management
+│   ├── soundcloud.content.ts      # ISOLATED bridge — user scraping, auto-join
+│   ├── soundcloud-main.content.ts # MAIN world — webpack hooking, playback control
+│   └── popup/                     # React popup UI
+├── components/                    # UI components
+├── hooks/                         # React hooks
+└── lib/
+    ├── protocol/                  # Shared types, message builders, constants
+    ├── messaging/                 # Internal extension message types
+    ├── state/                     # JamState store with persistence
+    └── websocket/                 # WebSocket client with reconnect + queue
 ```
 
-#### Incoming (Desktop → Extension)
-```javascript
-{
-  type: "WS_PLAY_TRACK",
-  data: {
-    trackUrl: string  // SoundCloud track URL
-  }
-}
+## Setup
+
+### Prerequisites
+
+- Node.js 18+
+- The [SoundCloud Jam Server](https://github.com/noobtra/soundcloud-jam-server) running
+
+### Install & Build
+
+```bash
+npm install
+npm run build
 ```
 
-### Exposed Window Functions
+### Load in Chrome
 
-The extension exposes several functions for debugging/testing:
+1. Go to `chrome://extensions`
+2. Enable **Developer mode**
+3. Click **Load unpacked**
+4. Select the `.output/chrome-mv3` directory
 
-- `window.callGetQueue()` - Get current playback queue
-- `window.callAddExplicitQueueItem(item)` - Add item to queue
-- `window.callGetCurrentQueueItem()` - Get current queue item
-- `window.callPlayAudible(model)` - Start track playback
-- `window.callPrepareModel(data)` - Create track model from data
+### Development
 
-## Technical Details
+```bash
+npm run dev
+```
 
-### SoundCloud Hooking Strategy
+WXT will watch for changes and hot-reload the extension.
 
-The extension uses sophisticated techniques to integrate with SoundCloud:
+## Server
 
-1. **Webpack Interception**: Hooks `webpackJsonp.push` to scan loaded modules
-2. **Function Discovery**: Searches modules for specific function signatures
-3. **Runtime Binding**: Captures and binds internal functions for later use
-4. **Model Constructor**: Extracts track model constructor for creating playable instances
+This extension connects to a WebSocket server that coordinates jam sessions. See the server repo:
 
-### Timing Precision
+**[soundcloud-jam-server](https://github.com/noobtra/soundcloud-jam-server)**
 
-Track timing calculations account for:
-- Current playback position when track starts
-- Total track duration
-- Precise Unix timestamps for synchronization
-
-### Error Handling
-
-- Graceful handling of SoundCloud internal changes
-- WebSocket reconnection logic with 2.5-second intervals
-- Silent error handling for playback operations
-
-## Limitations
-
-- **Discord Integration Blocked**: Cannot integrate with Discord's closed-source RPC
-- **SoundCloud Dependencies**: Relies on SoundCloud's internal structure (may break with updates)
-- **Single-User**: No multi-user synchronization capabilities
-- **Chrome Only**: Extension format specific to Chromium browsers
-
-## Development Notes
-
-### Debugging
-
-Enable Chrome Developer Tools console to see:
-- WebSocket connection status
-- Track detection events
-- Module hooking progress
-- Error messages
-
-### SoundCloud Updates
-
-If SoundCloud updates break functionality:
-1. Check console for webpack hooking errors
-2. Inspect module structure changes
-3. Update function signatures in `searchModuleForFunctions`
+By default the extension connects to `ws://127.0.0.1:9005/ws`. Update `src/lib/protocol/constants.ts` to point to your server.
 
 ## License
 
-MIT License
-
-Copyright (c) 2025 noobtra
-
-Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
-
-## Contributing
-
-This project is discontinued, but the code serves as a reference for:
-- Chrome extension development
-- WebSocket communication patterns
-- Advanced DOM injection techniques
-- Webpack module interception
-- SoundCloud API reverse engineering
-
----
-
-**Note**: This extension demonstrates advanced browser automation techniques and should be used responsibly in accordance with SoundCloud's Terms of Service.
+MIT
