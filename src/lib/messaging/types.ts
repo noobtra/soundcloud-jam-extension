@@ -2,7 +2,7 @@
 // Messages sent between popup ↔ background ↔ content scripts
 // via chrome.runtime messaging.
 
-import type { CurrentUser, JamSession, TrackInfo } from "../protocol/types";
+import type { CurrentUser, JamMode, JamSession, TrackInfo } from "../protocol/types";
 
 // ── Popup / Content → Background ──────────────────────────────────
 
@@ -13,6 +13,7 @@ export interface GetJamStateMsg {
 export interface CreateJamMsg {
   type: "CREATE_JAM";
   displayName: string;
+  mode: JamMode;
 }
 
 export interface JoinJamMsg {
@@ -50,6 +51,32 @@ export interface AutoJoinMsg {
   inviteCode: string;
 }
 
+export interface ChangeModeMsg {
+  type: "CHANGE_MODE";
+  mode: JamMode;
+}
+
+export interface QueueAddMsg {
+  type: "QUEUE_ADD";
+  track: TrackInfo;
+}
+
+export interface QueueRemoveMsg {
+  type: "QUEUE_REMOVE";
+  queueId: string;
+}
+
+/** Queue add from injected button in MAIN world content script. */
+export interface ContentQueueAddMsg {
+  type: "CONTENT_QUEUE_ADD";
+  data: {
+    artist: string;
+    title: string;
+    artwork_url: string | null;
+    track_url: string;
+  };
+}
+
 /** Focus or open the SoundCloud tab. */
 export interface FocusSoundCloudMsg {
   type: "FOCUS_SOUNDCLOUD";
@@ -66,8 +93,12 @@ export type InboundMessage =
   | CreateJamMsg
   | JoinJamMsg
   | LeaveJamMsg
+  | ChangeModeMsg
+  | QueueAddMsg
+  | QueueRemoveMsg
   | ContentTrackUpdateMsg
   | ContentCurrentUserMsg
+  | ContentQueueAddMsg
   | AutoJoinMsg
   | FocusSoundCloudMsg
   | NavigateSoundCloudMsg;

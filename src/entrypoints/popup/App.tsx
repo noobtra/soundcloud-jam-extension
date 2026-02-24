@@ -2,13 +2,14 @@ import { useJamState } from "@/hooks/useJamState";
 import ConnectionStatus from "@/components/ConnectionStatus";
 import JamJoinCreate from "@/components/JamJoinCreate";
 import JamLobby from "@/components/JamLobby";
+import type { JamMode } from "@/lib/protocol/types";
 
 export default function App() {
   const { session, userId, currentUser, connectionState, loading } =
     useJamState();
 
-  function handleCreateJam(displayName: string) {
-    browser.runtime.sendMessage({ type: "CREATE_JAM", displayName });
+  function handleCreateJam(displayName: string, mode: JamMode) {
+    browser.runtime.sendMessage({ type: "CREATE_JAM", displayName, mode });
   }
 
   function handleJoinJam(inviteCode: string, displayName: string) {

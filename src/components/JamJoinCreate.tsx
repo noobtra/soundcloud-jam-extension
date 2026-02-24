@@ -1,9 +1,9 @@
 import { useState } from "react";
-import type { CurrentUser } from "@/lib/protocol/types";
+import type { CurrentUser, JamMode } from "@/lib/protocol/types";
 
 interface Props {
   currentUser: CurrentUser | null;
-  onCreateJam: (displayName: string) => void;
+  onCreateJam: (displayName: string, mode: JamMode) => void;
   onJoinJam: (inviteCode: string, displayName: string) => void;
 }
 
@@ -13,6 +13,7 @@ export default function JamJoinCreate({
   onJoinJam,
 }: Props) {
   const [inviteCode, setInviteCode] = useState("");
+  const [mode, setMode] = useState<JamMode>("anyone");
 
   const loggedIn = currentUser !== null;
   const canJoin = loggedIn && inviteCode.trim().length > 0;
@@ -72,11 +73,23 @@ export default function JamJoinCreate({
       {/* Create jam */}
       <button
         disabled={!loggedIn}
-        onClick={() => onCreateJam(currentUser!.displayName)}
+        onClick={() => onCreateJam(currentUser!.displayName, mode)}
         className="w-full rounded-xl bg-gradient-to-r from-orange-500 to-orange-600 py-3 text-sm font-semibold text-white shadow-lg shadow-orange-500/20 transition-all duration-200 hover:shadow-orange-500/30 hover:brightness-110 active:scale-[0.98] disabled:opacity-30 disabled:shadow-none disabled:hover:brightness-100"
       >
         Create Jam
       </button>
+
+      {/* Mode checkbox */}
+      <label className={`flex items-center justify-center gap-2 ${loggedIn ? "cursor-pointer" : "opacity-30"}`}>
+        <input
+          type="checkbox"
+          checked={mode === "anyone"}
+          disabled={!loggedIn}
+          onChange={(e) => setMode(e.target.checked ? "anyone" : "host_only")}
+          className="h-3.5 w-3.5 rounded border-neutral-700 bg-neutral-800 text-orange-500 accent-orange-500 focus:ring-0 focus:ring-offset-0"
+        />
+        <span className="text-xs text-neutral-500 select-none">Anyone can change tracks</span>
+      </label>
 
       {/* Divider */}
       <div className="flex items-center gap-3">

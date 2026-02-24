@@ -178,11 +178,193 @@ export default defineContentScript({
       }
     };
 
+    // ── Queue button injection on track cards ──────────────────────
+    let jamActive = false;
+
+    // Inject a <style> for the jam queue button so it stands out
+    const jamStyle = document.createElement("style");
+    jamStyle.textContent = `
+      .jam-queue-btn {
+        background: linear-gradient(135deg, #f97316, #ea580c) !important;
+        color: #fff !important;
+        border: none !important;
+        border-radius: 4px !important;
+        font-weight: 600 !important;
+        transition: filter 0.15s, transform 0.1s !important;
+      }
+      .jam-queue-btn:hover {
+        filter: brightness(1.15) !important;
+      }
+      .jam-queue-btn:active {
+        transform: scale(0.95) !important;
+      }
+      .jam-queue-btn.jam-queue-btn--added {
+        background: linear-gradient(135deg, #22c55e, #16a34a) !important;
+      }
+    `;
+    // Append to <head> when available, otherwise <html>
+    (document.head || document.documentElement).appendChild(jamStyle);
+
+    /**
+     * Extracts track info from the context around a queue button.
+     * Supports two layouts:
+     *   1) Stream / likes list — ancestor is `.sound.streamContext`
+     *   2) Direct song page   — ancestor is `.listenEngagement__footer`
+     */
+    function extractTrackInfo(btn: HTMLElement) {
+      // ── Stream / likes list ────────────────────────────────────
+      const soundEl = btn.closest(".sound.streamContext");
+      if (soundEl) {
+        const trackUrlEl =
+          soundEl.querySelector("a.sound__coverArt[href]") ||
+          soundEl.querySelector("a.soundTitle__title[href]");
+        const trackUrl = trackUrlEl
+          ? new URL(
+              trackUrlEl.getAttribute("href")!,
+              window.location.origin,
+            ).href
+          : "";
+
+        const artistEl = soundEl.querySelector("span.soundTitle__usernameText");
+        const artist = artistEl?.textContent?.trim() ?? "Unknown";
+
+        const titleEl = soundEl.querySelector("a.soundTitle__title span");
+        const title = titleEl?.textContent?.trim() ?? "Unknown";
+
+        const artworkEl = soundEl.querySelector("span.sc-artwork");
+        let artworkUrl: string | null = null;
+        if (artworkEl) {
+          const bg = (artworkEl as HTMLElement).style.backgroundImage;
+          const m = bg.match(/url\(["']?(.+?)["']?\)/);
+          if (m) artworkUrl = m[1];
+        }
+
+        return { artist, title, artwork_url: artworkUrl, track_url: trackUrl };
+      }
+
+      // ── Direct song page ───────────────────────────────────────
+      const listenFooter = btn.closest(".listenEngagement__footer");
+      if (listenFooter) {
+        // Title + artist live in the hero section above the footer
+        const hero = document.querySelector(".l-listen-hero");
+
+        const titleEl = hero?.querySelector("h1.soundTitle__title span");
+        const title = titleEl?.textContent?.trim() ?? "Unknown";
+
+        const artistEl =
+          hero?.querySelector("h2.soundTitle__username a") ||
+          hero?.querySelector(".soundTitle__username a");
+        const artist = artistEl?.textContent?.trim() ?? "Unknown";
+
+        const artworkEl = hero?.querySelector(
+          ".listenArtworkWrapper span.sc-artwork",
+        );
+        let artworkUrl: string | null = null;
+        if (artworkEl) {
+          const bg = (artworkEl as HTMLElement).style.backgroundImage;
+          const m = bg.match(/url\(["']?(.+?)["']?\)/);
+          if (m) artworkUrl = m[1];
+        }
+
+        // On the direct page the URL *is* the track
+        const trackUrl = window.location.origin + window.location.pathname;
+
+        return { artist, title, artwork_url: artworkUrl, track_url: trackUrl };
+      }
+
+      return null;
+    }
+
+    function injectQueueButtons() {
+      const groups = document.querySelectorAll(
+        "div.sc-button-group:not([data-jam-queue])",
+      );
+      for (const group of groups) {
+        // Only target groups inside .soundActions
+        if (!group.closest(".soundActions")) continue;
+
+        group.setAttribute("data-jam-queue", "1");
+
+        const btn = document.createElement("button");
+        btn.className =
+          "sc-button sc-button-medium sc-button-icon sc-button-responsive jam-queue-btn";
+        btn.title = "Add to Jam Queue";
+        btn.style.display = jamActive ? "" : "none";
+        btn.innerHTML = `<div><svg viewBox="0 0 16 16" width="16" height="16" style="pointer-events:none"><path d="M8 2v12M2 8h12" stroke="currentColor" stroke-width="2" stroke-linecap="round" fill="none"/></svg></div>`;
+
+        let feedbackTimer: ReturnType<typeof setTimeout> | null = null;
+        btn.addEventListener("click", (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+
+          // Ignore clicks while feedback is showing (prevents duplicates)
+          if (feedbackTimer !== null) return;
+
+          const info = extractTrackInfo(btn);
+          if (!info) return;
+
+          window.postMessage(
+            {
+              source: "SOUNDCLOUD_JAM",
+              payload: { type: "CONTENT_QUEUE_ADD", data: info },
+            },
+            "*",
+          );
+
+          // Visual feedback — brief green checkmark
+          const origHTML = btn.innerHTML;
+          btn.classList.add("jam-queue-btn--added");
+          btn.innerHTML = `<div><svg viewBox="0 0 16 16" width="16" height="16" style="pointer-events:none"><path d="M3 8l4 4 6-7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg></div>`;
+          feedbackTimer = setTimeout(() => {
+            btn.innerHTML = origHTML;
+            btn.classList.remove("jam-queue-btn--added");
+            feedbackTimer = null;
+          }, 1200);
+        });
+
+        // Insert before .sc-button-more if it exists, otherwise append
+        const moreBtn = group.querySelector(".sc-button-more");
+        if (moreBtn) {
+          group.insertBefore(btn, moreBtn);
+        } else {
+          group.appendChild(btn);
+        }
+      }
+    }
+
+    // Observe DOM for new track cards (SPA navigation)
+    let rafPending = false;
+    const domObserver = new MutationObserver(() => {
+      if (rafPending) return;
+      rafPending = true;
+      requestAnimationFrame(() => {
+        rafPending = false;
+        injectQueueButtons();
+      });
+    });
+    domObserver.observe(document.documentElement, {
+      subtree: true,
+      childList: true,
+    });
+
+    function setJamActive(active: boolean) {
+      jamActive = active;
+      const btns = document.querySelectorAll(".jam-queue-btn");
+      for (const b of btns) {
+        (b as HTMLElement).style.display = active ? "" : "none";
+      }
+    }
+
     // Listen for commands from the bridge (ISOLATED world)
     window.addEventListener("message", (event) => {
       if (event.source !== window) return;
       if (event.data?.source === "SOUNDCLOUD_JAM") {
         const payload = event.data.payload;
+
+        if (payload.type === "JAM_ACTIVE_STATE") {
+          setJamActive(payload.active);
+        }
+
         if (payload.type === "SC_NAVIGATE" && payload.url) {
           // SPA navigation — pushState + popstate keeps playback alive
           try {

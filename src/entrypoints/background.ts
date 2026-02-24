@@ -80,6 +80,14 @@ export default defineBackground(() => {
         sendPlayTrackToJamTab(serverMsg.track);
         break;
 
+      case "MODE_CHANGED":
+        state.setMode(serverMsg.mode);
+        break;
+
+      case "QUEUE_UPDATED":
+        state.setQueue(serverMsg.queue);
+        break;
+
       case "ERROR":
         console.warn("[Jam] Server error:", serverMsg.code, serverMsg.message);
         break;
@@ -136,11 +144,12 @@ export default defineBackground(() => {
         case "CREATE_JAM": {
           const user = state.getSnapshot().currentUser;
           if (!user) break;
+          const mode = message.mode;
           resolveJamTab(senderTabId).then((tabId) => {
             jamTabId = tabId;
             console.log("[Jam] Jam tab pinned:", jamTabId);
             ws.connect();
-            ws.send(msg.createJam(user));
+            ws.send(msg.createJam(user, mode));
           });
           break;
         }
@@ -272,6 +281,39 @@ export default defineBackground(() => {
             }
           }
           break;
+
+        case "CHANGE_MODE":
+          if (state.getSnapshot().session) {
+            ws.send(msg.changeMode(message.mode));
+          }
+          break;
+
+        case "QUEUE_ADD":
+          if (state.getSnapshot().session) {
+            ws.send(msg.queueAdd(message.track));
+          }
+          break;
+
+        case "QUEUE_REMOVE":
+          if (state.getSnapshot().session) {
+            ws.send(msg.queueRemove(message.queueId));
+          }
+          break;
+
+        case "CONTENT_QUEUE_ADD": {
+          if (!state.getSnapshot().session) break;
+          const d = message.data;
+          const queueTrack: TrackInfo = {
+            title: d.title,
+            artist: d.artist,
+            artworkUrl: d.artwork_url,
+            trackUrl: d.track_url,
+            startTime: 0,
+            endTime: 0,
+          };
+          ws.send(msg.queueAdd(queueTrack));
+          break;
+        }
       }
 
       sendResponse({ status: "OK" });
@@ -279,15 +321,18 @@ export default defineBackground(() => {
     },
   );
 
-  // ── Intercept ?jam= URLs ────────────────────────────────────────
-  // We can't prevent the navigation, but we handle the join from
-  // background so the content script doesn't need to. The content
-  // script's checkAutoJoin handles stripping the param from the URL.
+  // ── Intercept jam URLs (fallback for fresh page loads) ──────────
+  // Handles both ?jam=CODE (query) and #jam=CODE (hash) on full
+  // page loads. The content script handles hash-only changes without
+  // reload via the hashchange event — this is just a background fallback.
   browser.webNavigation.onCompleted.addListener(
     (details) => {
       if (details.frameId !== 0) return; // only top frame
       const url = new URL(details.url);
-      const jamCode = url.searchParams.get("jam");
+      const jamCode =
+        url.searchParams.get("jam") ||
+        url.hash.match(/^#jam=([A-Za-z0-9]+)/)?.[1] ||
+        null;
       if (!jamCode) return;
 
       const snap = state.getSnapshot();
@@ -296,11 +341,11 @@ export default defineBackground(() => {
       if (!user) return;
 
       jamTabId = details.tabId;
-      console.log("[Jam] Intercepted ?jam= navigation, joining:", jamCode);
+      console.log("[Jam] Intercepted jam URL navigation, joining:", jamCode);
       ws.connect();
       ws.send(msg.joinJam(jamCode, user));
     },
-    { url: [{ hostEquals: "soundcloud.com", queryContains: "jam=" }] },
+    { url: [{ hostEquals: "soundcloud.com" }] },
   );
 
   // ── Auto-leave when jam tab navigates away ────────────────────

@@ -1,4 +1,4 @@
-import type { CurrentUser, JamSession, JamUser, TrackInfo } from "../protocol/types";
+import type { CurrentUser, JamMode, JamSession, JamUser, QueuedTrack, TrackInfo } from "../protocol/types";
 import type { ConnectionState, JamStateUpdate } from "../messaging/types";
 
 const STORAGE_KEY = "jam_state";
@@ -91,6 +91,18 @@ export class JamState {
       ...this.session,
       users: this.session.users.filter((u) => u.id !== userId),
     };
+    this.notify();
+  }
+
+  setMode(mode: JamMode) {
+    if (!this.session) return;
+    this.session = { ...this.session, mode };
+    this.notify();
+  }
+
+  setQueue(queue: QueuedTrack[]) {
+    if (!this.session) return;
+    this.session = { ...this.session, queue };
     this.notify();
   }
 

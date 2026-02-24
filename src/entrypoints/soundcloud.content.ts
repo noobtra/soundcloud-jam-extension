@@ -6,6 +6,16 @@ export default defineContentScript({
     // Forward messages from the background/popup to the MAIN world.
     browser.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
       window.postMessage({ source: "SOUNDCLOUD_JAM", payload: msg }, "*");
+
+      // Also relay jam-active state so the MAIN world can toggle queue buttons
+      if (msg.type === "JAM_STATE_UPDATE") {
+        const active = msg.session !== null;
+        window.postMessage({
+          source: "SOUNDCLOUD_JAM",
+          payload: { type: "JAM_ACTIVE_STATE", active },
+        }, "*");
+      }
+
       sendResponse({ status: "OK" });
     });
 
@@ -57,16 +67,36 @@ export default defineContentScript({
       return false;
     }
 
-    // ── Auto-join via ?jam=CODE in URL ──────────────────────────────
-    function checkAutoJoin() {
+    // ── Auto-join via #jam=CODE or ?jam=CODE in URL ─────────────────
+    function extractJamCode(): string | null {
+      // Prefer hash-based: soundcloud.com/#jam=CODE (no page reload)
+      const hashMatch = window.location.hash.match(/^#jam=([A-Za-z0-9]+)/);
+      if (hashMatch) return hashMatch[1];
+
+      // Fallback: query-based: soundcloud.com?jam=CODE (causes reload)
       const params = new URLSearchParams(window.location.search);
-      const code = params.get("jam");
+      return params.get("jam");
+    }
+
+    function stripJamFromUrl() {
+      const url = new URL(window.location.href);
+      // Strip from hash
+      if (url.hash.match(/^#jam=/)) {
+        url.hash = "";
+      }
+      // Strip from query
+      if (url.searchParams.has("jam")) {
+        url.searchParams.delete("jam");
+      }
+      history.replaceState(null, "", url.pathname + url.search + url.hash);
+    }
+
+    function checkAutoJoin() {
+      const code = extractJamCode();
       if (!code) return;
 
-      // Remove the ?jam= param from the URL so it doesn't re-trigger
-      const url = new URL(window.location.href);
-      url.searchParams.delete("jam");
-      history.replaceState(null, "", url.toString());
+      // Clean the URL so it doesn't re-trigger
+      stripJamFromUrl();
 
       // Wait for current user to be scraped, then auto-join
       const scraped = scrapeCurrentUser();
@@ -101,9 +131,12 @@ export default defineContentScript({
       checkAutoJoin();
     }
 
+    // ── Hash change listener (no-reload join when already on SC) ────
+    window.addEventListener("hashchange", () => {
+      checkAutoJoin();
+    });
+
     // ── Watch for SPA navigation (URL changes without page reload) ──
-    // SoundCloud is an SPA, so pasting a ?jam= link into an already-open
-    // tab won't trigger a full page load — we need to detect it here.
     let lastUrl = window.location.href;
     const observer = new MutationObserver(() => {
       if (window.location.href !== lastUrl) {

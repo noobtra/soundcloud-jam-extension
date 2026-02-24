@@ -32,6 +32,18 @@ export interface CurrentUser {
   profileUrl: string;
 }
 
+/** Jam playback control mode. */
+export type JamMode = "host_only" | "anyone";
+
+/** A track in the shared queue. */
+export interface QueuedTrack {
+  queueId: string;
+  track: TrackInfo;
+  addedBy: string;
+  addedByName: string;
+  addedAt: number;
+}
+
 /** Full jam session state. */
 export interface JamSession {
   jamId: string;
@@ -39,6 +51,8 @@ export interface JamSession {
   users: JamUser[];
   hostId: string;
   createdAt: number;
+  mode: JamMode;
+  queue: QueuedTrack[];
 }
 
 // ── Client → Server Messages ──────────────────────────────────────
@@ -49,6 +63,7 @@ export interface CreateJamMessage {
   avatarUrl: string | null;
   profileUrl: string | null;
   username: string | null;
+  mode: JamMode;
 }
 
 export interface JoinJamMessage {
@@ -69,6 +84,21 @@ export interface TrackUpdateMessage {
   track: TrackInfo;
 }
 
+export interface ChangeModeMessage {
+  type: "CHANGE_MODE";
+  mode: JamMode;
+}
+
+export interface QueueAddMessage {
+  type: "QUEUE_ADD";
+  track: TrackInfo;
+}
+
+export interface QueueRemoveMessage {
+  type: "QUEUE_REMOVE";
+  queueId: string;
+}
+
 export interface PingMessage {
   type: "PING";
 }
@@ -78,6 +108,9 @@ export type ClientMessage =
   | JoinJamMessage
   | LeaveJamMessage
   | TrackUpdateMessage
+  | ChangeModeMessage
+  | QueueAddMessage
+  | QueueRemoveMessage
   | PingMessage;
 
 // ── Server → Client Messages ──────────────────────────────────────
@@ -115,6 +148,16 @@ export interface PlayTrackMessage {
   track: TrackInfo;
 }
 
+export interface ModeChangedMessage {
+  type: "MODE_CHANGED";
+  mode: JamMode;
+}
+
+export interface QueueUpdatedMessage {
+  type: "QUEUE_UPDATED";
+  queue: QueuedTrack[];
+}
+
 export interface PongMessage {
   type: "PONG";
 }
@@ -132,5 +175,7 @@ export type ServerMessage =
   | UserLeftMessage
   | UserTrackUpdatedMessage
   | PlayTrackMessage
+  | ModeChangedMessage
+  | QueueUpdatedMessage
   | PongMessage
   | ErrorMessage;
