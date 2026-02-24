@@ -21,11 +21,14 @@ export default function JamJoinCreate({
     <div className="space-y-4">
       {/* Current user profile */}
       {currentUser ? (
-        <a
-          href={currentUser.profileUrl}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="group flex items-center gap-3 rounded-xl bg-neutral-900/80 px-3.5 py-3 transition-all duration-200 hover:bg-neutral-800/80"
+        <button
+          type="button"
+          onClick={() => {
+            if (currentUser.profileUrl) {
+              browser.runtime.sendMessage({ type: "NAVIGATE_SOUNDCLOUD", url: currentUser.profileUrl }).catch(() => {});
+            }
+          }}
+          className="group flex w-full items-center gap-3 rounded-xl bg-neutral-900/80 px-3.5 py-3 text-left transition-all duration-200 hover:bg-neutral-800/80"
         >
           <div className="relative shrink-0">
             {currentUser.avatarUrl ? (
@@ -52,7 +55,7 @@ export default function JamJoinCreate({
           <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5" className="ml-auto h-3.5 w-3.5 shrink-0 text-neutral-600 transition-all duration-200 group-hover:translate-x-0.5 group-hover:text-neutral-400">
             <path d="M7 4l6 6-6 6" strokeLinecap="round" strokeLinejoin="round" />
           </svg>
-        </a>
+        </button>
       ) : (
         <div className="rounded-xl bg-neutral-900/80 px-4 py-5 text-center">
           <div className="mx-auto mb-2.5 flex h-10 w-10 items-center justify-center rounded-full bg-neutral-800">

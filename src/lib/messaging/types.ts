@@ -55,6 +55,12 @@ export interface FocusSoundCloudMsg {
   type: "FOCUS_SOUNDCLOUD";
 }
 
+/** Navigate the SoundCloud tab to a URL (SPA-style, no reload). */
+export interface NavigateSoundCloudMsg {
+  type: "NAVIGATE_SOUNDCLOUD";
+  url: string;
+}
+
 export type InboundMessage =
   | GetJamStateMsg
   | CreateJamMsg
@@ -63,7 +69,8 @@ export type InboundMessage =
   | ContentTrackUpdateMsg
   | ContentCurrentUserMsg
   | AutoJoinMsg
-  | FocusSoundCloudMsg;
+  | FocusSoundCloudMsg
+  | NavigateSoundCloudMsg;
 
 // ── Background → Popup / Content (broadcast) ─────────────────────
 

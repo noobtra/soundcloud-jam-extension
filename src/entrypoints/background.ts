@@ -96,6 +96,15 @@ export default defineBackground(() => {
     browser.tabs.sendMessage(jamTabId, cmd).catch(() => {});
   }
 
+  /** Focus a tab and its window. */
+  async function focusTab(tabId: number) {
+    const tab = await browser.tabs.get(tabId);
+    await browser.tabs.update(tabId, { active: true });
+    if (tab.windowId != null) {
+      await browser.windows.update(tab.windowId, { focused: true });
+    }
+  }
+
   /** Resolve which tab to pin as the jam tab. */
   async function resolveJamTab(senderTabId?: number): Promise<number | null> {
     // If the message came from a content script tab, use that
@@ -233,6 +242,36 @@ export default defineBackground(() => {
             }
           }
           break;
+
+        case "NAVIGATE_SOUNDCLOUD":
+          // Navigate the jam tab (or any SC tab) via SPA routing — no reload
+          {
+            const navUrl = message.url;
+            const navTabId = jamTabId;
+            if (navTabId != null) {
+              focusTab(navTabId)
+                .then(() => browser.tabs.sendMessage(navTabId, { type: "SC_NAVIGATE", url: navUrl }))
+                .catch(() => {
+                  // Jam tab gone — open the URL directly
+                  browser.tabs.create({ url: navUrl });
+                });
+            } else {
+              browser.tabs
+                .query({ url: "*://soundcloud.com/*" })
+                .then((tabs) => {
+                  if (tabs[0]?.id != null) {
+                    const tabId = tabs[0].id!;
+                    focusTab(tabId)
+                      .then(() => browser.tabs.sendMessage(tabId, { type: "SC_NAVIGATE", url: navUrl }))
+                      .catch(() => {});
+                  } else {
+                    browser.tabs.create({ url: navUrl });
+                  }
+                })
+                .catch(() => {});
+            }
+          }
+          break;
       }
 
       sendResponse({ status: "OK" });
@@ -240,10 +279,35 @@ export default defineBackground(() => {
     },
   );
 
-  // ── Auto-leave when jam tab closes or navigates away ──────────
-  browser.tabs.onRemoved.addListener((tabId) => {
-    if (tabId === jamTabId) {
-      console.log("[Jam] Jam tab closed — leaving jam.");
+  // ── Intercept ?jam= URLs ────────────────────────────────────────
+  // We can't prevent the navigation, but we handle the join from
+  // background so the content script doesn't need to. The content
+  // script's checkAutoJoin handles stripping the param from the URL.
+  browser.webNavigation.onCompleted.addListener(
+    (details) => {
+      if (details.frameId !== 0) return; // only top frame
+      const url = new URL(details.url);
+      const jamCode = url.searchParams.get("jam");
+      if (!jamCode) return;
+
+      const snap = state.getSnapshot();
+      if (snap.session) return; // already in a jam
+      const user = snap.currentUser;
+      if (!user) return;
+
+      jamTabId = details.tabId;
+      console.log("[Jam] Intercepted ?jam= navigation, joining:", jamCode);
+      ws.connect();
+      ws.send(msg.joinJam(jamCode, user));
+    },
+    { url: [{ hostEquals: "soundcloud.com", queryContains: "jam=" }] },
+  );
+
+  // ── Auto-leave when jam tab navigates away ────────────────────
+  browser.tabs.onUpdated.addListener((tabId, changeInfo) => {
+    if (tabId !== jamTabId || !changeInfo.url) return;
+    if (!changeInfo.url.startsWith("https://soundcloud.com")) {
+      console.log("[Jam] Jam tab navigated away — leaving jam.");
       ws.send(msg.leaveJam());
       state.clearSession();
       jamTabId = null;
@@ -251,11 +315,10 @@ export default defineBackground(() => {
     }
   });
 
-  browser.tabs.onUpdated.addListener((tabId, changeInfo) => {
-    if (tabId !== jamTabId) return;
-    // If the jam tab navigates away from SoundCloud
-    if (changeInfo.url && !changeInfo.url.startsWith("https://soundcloud.com")) {
-      console.log("[Jam] Jam tab navigated away — leaving jam.");
+  // ── Auto-leave when jam tab closes ────────────────────────────
+  browser.tabs.onRemoved.addListener((tabId) => {
+    if (tabId === jamTabId) {
+      console.log("[Jam] Jam tab closed — leaving jam.");
       ws.send(msg.leaveJam());
       state.clearSession();
       jamTabId = null;

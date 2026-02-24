@@ -7,7 +7,7 @@ export default defineConfig({
   manifest: {
     name: "SoundCloud Jam",
     description: "Jam with friends on SoundCloud — synchronized listening sessions.",
-    permissions: ["tabs", "storage", "alarms"],
+    permissions: ["tabs", "storage", "alarms", "webNavigation"],
     host_permissions: [
       "*://soundcloud.com/*",
       "wss://localhost:*/*",

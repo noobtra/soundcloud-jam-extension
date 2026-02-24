@@ -5,6 +5,10 @@ interface Props {
   currentUserId: string | null;
 }
 
+function navigateToProfile(url: string) {
+  browser.runtime.sendMessage({ type: "NAVIGATE_SOUNDCLOUD", url }).catch(() => {});
+}
+
 export default function UserList({ users, currentUserId }: Props) {
   return (
     <ul className="stagger-list space-y-1.5">
@@ -53,14 +57,13 @@ export default function UserList({ users, currentUserId }: Props) {
         return (
           <li key={user.id}>
             {user.profileUrl ? (
-              <a
-                href={user.profileUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="group flex items-center gap-2.5 rounded-xl bg-neutral-900/60 px-3 py-2.5 transition-colors duration-200 hover:bg-neutral-900/90"
+              <button
+                type="button"
+                onClick={() => navigateToProfile(user.profileUrl!)}
+                className="group flex w-full items-center gap-2.5 rounded-xl bg-neutral-900/60 px-3 py-2.5 text-left transition-colors duration-200 hover:bg-neutral-900/90"
               >
                 {inner}
-              </a>
+              </button>
             ) : (
               <div className="group flex items-center gap-2.5 rounded-xl bg-neutral-900/60 px-3 py-2.5">
                 {inner}

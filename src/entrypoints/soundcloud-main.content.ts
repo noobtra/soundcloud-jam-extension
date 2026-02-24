@@ -183,6 +183,18 @@ export default defineContentScript({
       if (event.source !== window) return;
       if (event.data?.source === "SOUNDCLOUD_JAM") {
         const payload = event.data.payload;
+        if (payload.type === "SC_NAVIGATE" && payload.url) {
+          // SPA navigation — pushState + popstate keeps playback alive
+          try {
+            const dest = new URL(payload.url, window.location.origin);
+            history.pushState({}, "", dest.pathname + dest.search + dest.hash);
+            window.dispatchEvent(new PopStateEvent("popstate", { state: history.state }));
+          } catch {
+            // Fallback: full navigation
+            window.location.href = payload.url;
+          }
+        }
+
         if (payload.type === "WS_PLAY_TRACK" && payload.data?.trackUrl) {
           fetchTrackInfo(payload.data.trackUrl)
             .then((trackData) => {
